@@ -6,13 +6,14 @@ import ModuleDetail from '../components/ModuleDetail';
 import ModuleRunner from '../components/ModuleRunner';
 import OutputConsole from '../components/OutputConsole';
 import JobsPanel from '../components/JobsPanel';
-import UserManagement from '../components/UserManagement';
-import ACLManager from '../components/ACLManager';
+import UserAdminPanel from '../components/UserAdminPanel';
 import TargetPanel from '../components/TargetPanel';
 import StatusPanel from '../components/StatusPanel';
 import ReportsPanel from '../components/ReportsPanel';
 
-type Tab = 'modules' | 'jobs' | 'reports' | 'target' | 'status' | 'users' | 'acl';
+type Tab = 'modules' | 'jobs' | 'reports' | 'target' | 'status' | 'users';
+
+type RsfHealthStatus = 'checking' | 'connected' | 'auth_failed' | 'offline' | 'degraded' | 'error';
 
 interface QuickStats {
     activeJobs: number;
@@ -26,6 +27,7 @@ export default function DashboardPage() {
     const [selectedModule, setSelectedModule] = useState<string | null>(null);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const { hasPermission, user } = useAuthStore();
+    const [rsfHealth, setRsfHealth] = useState<{ status: RsfHealthStatus; message: string }>({ status: 'checking', message: '' });
     const [stats, setStats] = useState<QuickStats>({
         activeJobs: 0,
         totalModules: 0,
@@ -33,13 +35,34 @@ export default function DashboardPage() {
         apiStatus: 'checking',
     });
 
+    // Check RSF API connectivity on mount
+    useEffect(() => {
+        const checkRsfHealth = async () => {
+            try {
+                const res = await apiClient.get('/rsf-health');
+                if (res.data.success) {
+                    setRsfHealth({ status: res.data.status, message: res.data.message });
+                    // Update apiStatus based on health check
+                    setStats(prev => ({
+                        ...prev,
+                        apiStatus: res.data.status === 'connected' ? 'connected' : 'disconnected',
+                    }));
+                }
+            } catch {
+                setRsfHealth({ status: 'error', message: 'Unable to check RSF API health' });
+                setStats(prev => ({ ...prev, apiStatus: 'disconnected' }));
+            }
+        };
+        checkRsfHealth();
+    }, []);
+
     // Fetch quick stats
     useEffect(() => {
         const fetchStats = async () => {
             try {
                 const [statusRes, modulesRes, targetRes, jobsRes] = await Promise.allSettled([
                     apiClient.get('/rsf/status'),
-                    apiClient.get('/rsf/modules'),
+                    apiClient.get('/rsf/modules/count'),
                     apiClient.get('/rsf/target'),
                     apiClient.get('/rsf/jobs'),
                 ]);
@@ -49,14 +72,10 @@ export default function DashboardPage() {
 
                     if (statusRes.status === 'fulfilled' && statusRes.value.data.success) {
                         newStats.apiStatus = 'connected';
-                    } else {
-                        newStats.apiStatus = 'disconnected';
                     }
 
                     if (modulesRes.status === 'fulfilled' && modulesRes.value.data.success) {
-                        const data = modulesRes.value.data.data || {};
-                        const mods = [...(data.exploits || []), ...(data.scanners || []), ...(data.creds || [])];
-                        newStats.totalModules = mods.length;
+                        newStats.totalModules = modulesRes.value.data.data?.total || 0;
                     }
 
                     if (targetRes.status === 'fulfilled' && targetRes.value.data.success) {
@@ -89,73 +108,126 @@ export default function DashboardPage() {
         { id: 'target', label: 'Target', icon: '🎯', perm: 'target.view' },
         { id: 'status', label: 'Status', icon: '📊', perm: 'status.view' },
         ...(hasPermission('users', 'manage') ? [{ id: 'users' as Tab, label: 'Users', icon: '👥', perm: 'users.manage' }] : []),
-        ...(hasPermission('acl', 'manage') ? [{ id: 'acl' as Tab, label: 'ACL', icon: '🔒', perm: 'acl.manage' }] : []),
     ];
 
+    const rsfStatusLabel = rsfHealth.status === 'connected' ? 'RSF ONLINE'
+        : rsfHealth.status === 'auth_failed' ? 'RSF DEGRADED'
+            : rsfHealth.status === 'offline' ? 'RSF OFFLINE'
+                : rsfHealth.status === 'checking' ? 'CHECKING...'
+                    : 'RSF ERROR';
+
+    const rsfStatusColor = rsfHealth.status === 'connected' ? 'text-cyber-green'
+        : rsfHealth.status === 'auth_failed' ? 'text-orange-400'
+            : rsfHealth.status === 'checking' ? 'text-cyber-yellow'
+                : 'text-cyber-red';
+
+    const rsfDotColor = rsfHealth.status === 'connected' ? 'bg-cyber-green animate-pulse-glow'
+        : rsfHealth.status === 'auth_failed' ? 'bg-orange-400 animate-pulse'
+            : rsfHealth.status === 'checking' ? 'bg-yellow-500 animate-pulse'
+                : 'bg-red-500 animate-pulse';
+
     return (
-        <div className="space-y-6">
+        <div className="w-full max-w-[1400px] mx-auto space-y-6">
             {/* Welcome header */}
             <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-xl font-bold text-text-primary">
-                        Welcome back, <span className="text-cyber-green">{user?.username}</span>
-                    </h1>
-                    <p className="text-xs text-text-muted mt-1">RustSploit Command Center • Framework Control Interface</p>
+                <div className="page-header mb-0">
+                    <div className="icon-badge">⚡</div>
+                    <div>
+                        <h1>
+                            Welcome back, <span className="text-cyber-green">{user?.username}</span>
+                        </h1>
+                        <div className="subtitle">Command Center • Framework Control Interface</div>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className={stats.apiStatus === 'connected' ? 'status-dot-green' : stats.apiStatus === 'disconnected' ? 'status-dot-red' : 'status-dot-yellow'} />
-                    <span className={`text-xs font-medium ${stats.apiStatus === 'connected' ? 'text-cyber-green' : stats.apiStatus === 'disconnected' ? 'text-cyber-red' : 'text-cyber-yellow'}`}>
-                        {stats.apiStatus === 'connected' ? 'RSF Online' : stats.apiStatus === 'disconnected' ? 'RSF Offline' : 'Checking...'}
+                <div className="flex items-center gap-3">
+                    <div className={`w-2.5 h-2.5 rounded-full ${rsfDotColor}`} />
+                    <span className={`text-xs font-semibold tracking-wider ${rsfStatusColor}`}>
+                        {rsfStatusLabel}
                     </span>
                 </div>
             </div>
 
-            {/* Quick Stats Bar */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="bg-bg-secondary rounded-lg p-3 border border-border-dim flex items-center gap-3">
-                    <span className="text-xl">⚡</span>
-                    <div>
-                        <div className="text-[0.6rem] text-text-muted uppercase tracking-wider">Active Jobs</div>
-                        <div className="text-sm font-bold text-text-primary">{stats.activeJobs}</div>
-                    </div>
-                </div>
-                <div className="bg-bg-secondary rounded-lg p-3 border border-border-dim flex items-center gap-3">
-                    <span className="text-xl">📦</span>
-                    <div>
-                        <div className="text-[0.6rem] text-text-muted uppercase tracking-wider">Modules</div>
-                        <div className="text-sm font-bold text-text-primary">{stats.totalModules || '—'}</div>
-                    </div>
-                </div>
-                <div className="bg-bg-secondary rounded-lg p-3 border border-border-dim flex items-center gap-3">
-                    <span className="text-xl">🎯</span>
-                    <div>
-                        <div className="text-[0.6rem] text-text-muted uppercase tracking-wider">Target</div>
-                        <div className="text-sm font-bold text-text-primary truncate max-w-[120px]">
-                            {stats.currentTarget || 'Not set'}
+            {/* Degraded Service Banner */}
+            {rsfHealth.status === 'auth_failed' && (
+                <div className="rounded-xl border border-orange-500/40 bg-gradient-to-r from-orange-500/10 via-orange-500/5 to-transparent p-4 flex items-start gap-4" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                    <div className="text-2xl flex-shrink-0 mt-0.5">⚠️</div>
+                    <div className="flex-1">
+                        <div className="text-sm font-bold text-orange-400 mb-1">Degraded Service — Wrong RSF API Key</div>
+                        <div className="text-xs text-text-secondary leading-relaxed">
+                            The backend is using an invalid RSF API key. Login and local features (Users, ACL) work normally,
+                            but RSF features (Modules, Jobs, Target, Status) are unavailable.
+                        </div>
+                        <div className="text-xs text-text-muted mt-2 font-mono bg-bg-input/60 rounded px-3 py-1.5 inline-block border border-border-dim">
+                            Fix: restart backend with correct <span className="text-orange-300">RSF_API_KEY</span> env var
                         </div>
                     </div>
                 </div>
-                <div className="bg-bg-secondary rounded-lg p-3 border border-border-dim flex items-center gap-3">
-                    <span className="text-xl">👤</span>
-                    <div>
-                        <div className="text-[0.6rem] text-text-muted uppercase tracking-wider">Role</div>
-                        <div className="text-sm font-bold text-text-primary">{user?.role || '—'}</div>
+            )}
+
+            {rsfHealth.status === 'offline' && (
+                <div className="rounded-xl border border-red-500/40 bg-gradient-to-r from-red-500/10 via-red-500/5 to-transparent p-4 flex items-start gap-4" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                    <div className="text-2xl flex-shrink-0 mt-0.5">🔴</div>
+                    <div className="flex-1">
+                        <div className="text-sm font-bold text-red-400 mb-1">RSF API Offline</div>
+                        <div className="text-xs text-text-secondary leading-relaxed">
+                            Cannot connect to the RustSploit API server. Login and local features (Users, ACL) work normally,
+                            but RSF features require the API to be running.
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Quick Stats Bar */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="stat-card stat-card-yellow">
+                    <div className="flex items-center gap-3">
+                        <div className="icon-badge-yellow" style={{ width: '2rem', height: '2rem', borderRadius: '0.5rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(255,230,0,0.15), rgba(255,230,0,0.03))', border: '1px solid rgba(255,230,0,0.3)', fontSize: '1rem' }}>⚡</div>
+                        <div>
+                            <div className="text-[0.6rem] text-text-muted uppercase tracking-wider font-semibold">Active Jobs</div>
+                            <div className={`text-lg font-bold text-text-primary ${stats.activeJobs > 0 ? 'text-cyber-yellow animate-pulse' : ''}`}>{stats.activeJobs}</div>
+                        </div>
+                    </div>
+                </div>
+                <div className="stat-card stat-card-blue">
+                    <div className="flex items-center gap-3">
+                        <div style={{ width: '2rem', height: '2rem', borderRadius: '0.5rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(0,212,255,0.15), rgba(0,212,255,0.03))', border: '1px solid rgba(0,212,255,0.3)', fontSize: '1rem' }}>📦</div>
+                        <div>
+                            <div className="text-[0.6rem] text-text-muted uppercase tracking-wider font-semibold">Modules</div>
+                            <div className="text-lg font-bold text-text-primary">{stats.totalModules || '—'}</div>
+                        </div>
+                    </div>
+                </div>
+                <div className="stat-card stat-card-green">
+                    <div className="flex items-center gap-3">
+                        <div style={{ width: '2rem', height: '2rem', borderRadius: '0.5rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(0,255,65,0.15), rgba(0,255,65,0.03))', border: '1px solid rgba(0,255,65,0.3)', fontSize: '1rem' }}>🎯</div>
+                        <div>
+                            <div className="text-[0.6rem] text-text-muted uppercase tracking-wider font-semibold">Target</div>
+                            <div className="text-sm font-bold text-text-primary truncate max-w-[140px]">
+                                {stats.currentTarget || 'Not set'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="stat-card stat-card-purple">
+                    <div className="flex items-center gap-3">
+                        <div style={{ width: '2rem', height: '2rem', borderRadius: '0.5rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(176,0,255,0.15), rgba(176,0,255,0.03))', border: '1px solid rgba(176,0,255,0.3)', fontSize: '1rem' }}>👤</div>
+                        <div>
+                            <div className="text-[0.6rem] text-text-muted uppercase tracking-wider font-semibold">Role</div>
+                            <div className="text-lg font-bold text-text-primary capitalize">{user?.role || '—'}</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             {/* Tab navigation */}
-            <div className="flex gap-1 bg-bg-secondary rounded-xl p-1 border border-border-dim overflow-x-auto">
+            <div className="tab-bar">
                 {tabs.map((tab) => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer border-0 ${activeTab === tab.id
-                            ? 'bg-cyber-green/15 text-cyber-green border border-border-glow shadow-[0_0_15px_var(--color-cyber-green-glow)]'
-                            : 'text-text-secondary hover:text-text-primary hover:bg-bg-card bg-transparent'
-                            }`}
+                        className={`tab-btn ${activeTab === tab.id ? 'tab-btn-active' : ''}`}
                     >
-                        <span className="text-sm">{tab.icon}</span>
+                        <span className="tab-icon">{tab.icon}</span>
                         {tab.label}
                     </button>
                 ))}
@@ -184,8 +256,7 @@ export default function DashboardPage() {
                 {activeTab === 'reports' && <ReportsPanel />}
                 {activeTab === 'target' && <TargetPanel />}
                 {activeTab === 'status' && <StatusPanel />}
-                {activeTab === 'users' && <UserManagement />}
-                {activeTab === 'acl' && <ACLManager />}
+                {activeTab === 'users' && <UserAdminPanel />}
             </div>
         </div>
     );

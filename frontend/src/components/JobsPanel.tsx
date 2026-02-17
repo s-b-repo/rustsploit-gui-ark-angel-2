@@ -8,6 +8,7 @@ interface Job {
     target: string;
     status: string;
     started_at: string;
+    completed_at?: string;
     duration_ms?: number;
 }
 
@@ -23,10 +24,13 @@ export default function JobsPanel({ onSelectJob }: Props) {
         try {
             const res = await apiClient.get('/rsf/jobs');
             if (res.data.success) {
-                setJobs(res.data.data.jobs || []);
+                setJobs(res.data.data?.jobs || res.data.jobs || []);
             }
-        } catch (err) {
-            toast.error('Failed to load jobs');
+        } catch (err: any) {
+            // 404 means RSF API doesn't have /jobs endpoint yet — silently show empty
+            if (err.response?.status !== 404) {
+                toast.error('Failed to load jobs');
+            }
         } finally {
             setLoading(false);
         }
@@ -34,120 +38,111 @@ export default function JobsPanel({ onSelectJob }: Props) {
 
     useEffect(() => {
         fetchJobs();
-        const interval = setInterval(fetchJobs, 5000); // Auto-refresh every 5s
+        const interval = setInterval(fetchJobs, 5000);
         return () => clearInterval(interval);
     }, []);
 
+    const handleKill = async (jobId: string) => {
+        try {
+            const res = await apiClient.post(`/rsf/kill/${jobId}`);
+            if (res.data.success) {
+                toast.success('Job killed');
+                fetchJobs();
+            } else {
+                toast.error(res.data.message || 'Failed to kill job');
+            }
+        } catch {
+            toast.error('Failed to kill job');
+        }
+    };
+
+    const formatDuration = (ms?: number) => {
+        if (ms == null) return '-';
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+        return `${(ms / 60000).toFixed(1)}m`;
+    };
+
+    const StatusBadge = ({ status }: { status: string }) => {
+        const cls = status === 'Running'
+            ? 'badge-blue animate-pulse'
+            : status === 'Completed'
+                ? 'badge-green'
+                : status === 'Failed'
+                    ? 'badge-red'
+                    : 'badge-yellow';
+        return <span className={`badge ${cls}`}>{status}</span>;
+    };
+
     return (
         <div className="glass-card overflow-hidden">
-            <div className="p-4 border-b border-border-dim flex justify-between items-center">
-                <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
-                    <span className="text-cyber-yellow">⚡</span> Job History
-                </h2>
-                <button
-                    onClick={fetchJobs}
-                    className="text-xs text-cyber-green hover:text-cyber-green-dim transition-colors bg-transparent border-0 cursor-pointer"
-                >
+            {/* Gradient header */}
+            <div className="card-header card-header-blue">
+                <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                        <span className="text-cyber-blue">⚡</span> Job History
+                    </h2>
+                    <span className="badge badge-blue text-[0.6rem]">{jobs.length}</span>
+                </div>
+                <button onClick={fetchJobs} className="text-xs text-cyber-blue hover:text-cyber-blue/80 transition-colors bg-transparent border-0 cursor-pointer">
                     ↻ Refresh
                 </button>
             </div>
 
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                    <thead className="bg-bg-card border-b border-border-dim text-text-muted uppercase tracking-wider">
-                        <tr>
-                            <th className="p-3 font-medium">Job ID</th>
-                            <th className="p-3 font-medium">Module</th>
-                            <th className="p-3 font-medium">Target</th>
-                            <th className="p-3 font-medium">Status</th>
-                            <th className="p-3 font-medium">Duration</th>
-                            <th className="p-3 font-medium">Started</th>
-                            <th className="p-3 font-medium text-right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-dim">
-                        {loading && jobs.length === 0 ? (
+            {loading ? (
+                <div className="p-8 text-center text-text-muted text-xs animate-pulse">Loading jobs...</div>
+            ) : jobs.length === 0 ? (
+                <div className="p-8 text-center">
+                    <div className="text-3xl mb-3 opacity-20">⚡</div>
+                    <p className="text-text-muted text-xs">No jobs recorded yet. Run a module to see results here.</p>
+                </div>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="table-premium">
+                        <thead>
                             <tr>
-                                <td colSpan={7} className="p-8 text-center text-text-muted">Loading jobs...</td>
+                                <th>Job ID</th>
+                                <th>Module</th>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th>Duration</th>
+                                <th>Started</th>
+                                <th className="text-right">Actions</th>
                             </tr>
-                        ) : jobs.length === 0 ? (
-                            <tr>
-                                <td colSpan={7} className="p-8 text-center text-text-muted">No jobs found</td>
-                            </tr>
-                        ) : (
-                            jobs.map((job) => (
-                                <tr key={job.job_id} className="hover:bg-bg-card-hover transition-colors">
-                                    <td className="p-3 font-mono text-text-secondary">{job.job_id.slice(0, 8)}</td>
-                                    <td className="p-3 text-text-primary font-medium">{job.module}</td>
-                                    <td className="p-3 text-text-secondary font-mono">{job.target}</td>
-                                    <td className="p-3">
-                                        <span className="flex items-center gap-1">
-                                            <span
-                                                className={`badge ${job.status === 'Running'
-                                                    ? 'badge-blue animate-pulse'
-                                                    : job.status === 'Completed'
-                                                        ? 'badge-green'
-                                                        : job.status === 'Failed'
-                                                            ? 'badge-red'
-                                                            : 'badge-yellow'
-                                                    }`}
+                        </thead>
+                        <tbody>
+                            {jobs.map((job) => (
+                                <tr key={job.job_id}>
+                                    <td className="font-mono text-text-secondary text-[0.7rem]">{job.job_id.slice(0, 8)}</td>
+                                    <td className="text-text-primary font-medium">{job.module}</td>
+                                    <td className="text-text-secondary font-mono text-[0.65rem]">{job.target}</td>
+                                    <td><StatusBadge status={job.status} /></td>
+                                    <td className="text-text-secondary">{formatDuration(job.duration_ms)}</td>
+                                    <td className="text-text-muted text-[0.65rem]">{new Date(job.started_at).toLocaleString()}</td>
+                                    <td className="text-right">
+                                        <div className="flex items-center gap-1.5 justify-end">
+                                            <button
+                                                onClick={() => onSelectJob(job.job_id)}
+                                                className="btn-outline text-[0.6rem] !px-2 !py-0.5"
                                             >
-                                                {job.status}
-                                            </span>
-                                            {job.status === 'Running' && (Date.now() - new Date(job.started_at).getTime()) > 5 * 60 * 1000 && (
-                                                <span title="Running for over 5 minutes" className="text-cyber-yellow text-[0.6rem]">⏱️</span>
+                                                📺 Output
+                                            </button>
+                                            {job.status === 'Running' && (
+                                                <button
+                                                    onClick={() => handleKill(job.job_id)}
+                                                    className="px-2 py-0.5 text-[0.6rem] text-cyber-red border border-cyber-red/30 rounded bg-transparent cursor-pointer hover:bg-cyber-red/10 transition-colors font-semibold"
+                                                >
+                                                    ⬜ Kill
+                                                </button>
                                             )}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 text-text-secondary">
-                                        <DurationDisplay job={job} />
-                                    </td>
-                                    <td className="p-3 text-text-muted">
-                                        {new Date(job.started_at).toLocaleString()}
-                                    </td>
-                                    <td className="p-3 text-right">
-                                        <button
-                                            onClick={() => onSelectJob(job.job_id)}
-                                            className="text-cyber-blue hover:text-white transition-colors bg-transparent border-0 cursor-pointer font-medium"
-                                        >
-                                            View Output →
-                                        </button>
+                                        </div>
                                     </td>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
-}
-
-/** Live elapsed‐time display for running jobs */
-function DurationDisplay({ job }: { job: { status: string; started_at: string; duration_ms?: number } }) {
-    const [elapsed, setElapsed] = useState('');
-
-    useEffect(() => {
-        if (job.status !== 'Running') {
-            setElapsed('');
-            return;
-        }
-        const update = () => {
-            const ms = Date.now() - new Date(job.started_at).getTime();
-            if (ms < 1000) setElapsed(`${ms}ms`);
-            else if (ms < 60000) setElapsed(`${(ms / 1000).toFixed(0)}s`);
-            else setElapsed(`${(ms / 60000).toFixed(1)}m`);
-        };
-        update();
-        const interval = setInterval(update, 1000);
-        return () => clearInterval(interval);
-    }, [job.status, job.started_at]);
-
-    if (job.duration_ms != null) {
-        return <>{(job.duration_ms / 1000).toFixed(2)}s</>;
-    }
-    if (job.status === 'Running' && elapsed) {
-        return <span className="text-cyber-yellow animate-pulse">{elapsed}</span>;
-    }
-    return <>-</>;
 }

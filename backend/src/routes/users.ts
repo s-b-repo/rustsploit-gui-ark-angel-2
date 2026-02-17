@@ -118,7 +118,7 @@ router.put('/:id', (req: AuthenticatedRequest, res: Response): void => {
     const values: any[] = [];
 
     if (role !== undefined) {
-        const validRoles = ['pentester', 'admin', 'sysadmin'];
+        const validRoles = ['pentester', 'operator', 'admin', 'sysadmin', 'readonly'];
         if (!validRoles.includes(role)) {
             res.status(400).json({ success: false, message: `Invalid role. Must be: ${validRoles.join(', ')}` });
             return;

@@ -5,7 +5,13 @@ import { authenticateJWT, requirePermission, AuthenticatedRequest } from '../mid
 const router = Router();
 
 const RSF_API_URL = process.env.RSF_API_URL || 'http://127.0.0.1:8080';
-const RSF_API_KEY = process.env.RSF_API_KEY || '';
+let rsfApiKey = process.env.RSF_API_KEY || '';
+
+/** Get the current RSF API key */
+export function getRsfApiKey(): string { return rsfApiKey; }
+
+/** Update the RSF API key at runtime (e.g. after key rotation) */
+export function setRsfApiKey(key: string): void { rsfApiKey = key; }
 
 // All proxy routes require authentication
 router.use(authenticateJWT);
@@ -26,7 +32,7 @@ async function proxyToRsf(
             data,
             params: query,
             headers: {
-                Authorization: `Bearer ${RSF_API_KEY}`,
+                Authorization: `Bearer ${rsfApiKey}`,
                 'Content-Type': 'application/json',
             },
             timeout: 30000,
@@ -173,6 +179,57 @@ router.post('/rotate-key', requirePermission('status.view'), async (_req: Authen
  */
 router.get('/health', async (_req: AuthenticatedRequest, res: Response) => {
     const result = await proxyToRsf('GET', '/health');
+    res.status(result.status).json(result.data);
+});
+
+// ---- New Feature Routes ----
+
+/**
+ * POST /api/rsf/honeypot-check
+ */
+router.post('/honeypot-check', requirePermission('modules.run'), async (req: AuthenticatedRequest, res: Response) => {
+    const result = await proxyToRsf('POST', '/api/honeypot-check', req.body);
+    res.status(result.status).json(result.data);
+});
+
+/**
+ * POST /api/rsf/jobs/:jobId/cancel
+ */
+router.post('/jobs/:jobId/cancel', requirePermission('jobs.view'), async (req: AuthenticatedRequest, res: Response) => {
+    const result = await proxyToRsf('POST', `/api/jobs/${req.params.jobId}/cancel`);
+    res.status(result.status).json(result.data);
+});
+
+/**
+ * DELETE /api/rsf/jobs/:jobId
+ */
+router.delete('/jobs/:jobId', requirePermission('jobs.view'), async (req: AuthenticatedRequest, res: Response) => {
+    const result = await proxyToRsf('DELETE', `/api/jobs/${req.params.jobId}`);
+    res.status(result.status).json(result.data);
+});
+
+/**
+ * GET /api/rsf/logs?lines=100
+ */
+router.get('/logs', requirePermission('status.view'), async (req: AuthenticatedRequest, res: Response) => {
+    const lines = (req.query.lines as string) || '100';
+    const result = await proxyToRsf('GET', '/api/logs', undefined, { lines });
+    res.status(result.status).json(result.data);
+});
+
+/**
+ * GET /api/rsf/config
+ */
+router.get('/config', requirePermission('status.view'), async (_req: AuthenticatedRequest, res: Response) => {
+    const result = await proxyToRsf('GET', '/api/config');
+    res.status(result.status).json(result.data);
+});
+
+/**
+ * GET /api/rsf/modules/count
+ */
+router.get('/modules/count', requirePermission('modules.view'), async (_req: AuthenticatedRequest, res: Response) => {
+    const result = await proxyToRsf('GET', '/api/modules/count');
     res.status(result.status).json(result.data);
 });
 

@@ -647,7 +647,15 @@ def start_dev_servers(env_vars=None):
             for name, proc in procs:
                 ret = proc.poll()
                 if ret is not None:
-                    warn(f"{name} process exited with code {ret}")
+                    error(f"{name} process exited with code {ret}")
+                    # Kill the other process
+                    for other_name, other_proc in procs:
+                        if other_name != name and other_proc.poll() is None:
+                            try:
+                                os.killpg(os.getpgid(other_proc.pid), signal.SIGTERM)
+                            except:
+                                pass
+                    return
 
             events = sel.select(timeout=1)
             for key, _ in events:

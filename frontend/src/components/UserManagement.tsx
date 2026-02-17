@@ -5,357 +5,232 @@ import toast from 'react-hot-toast';
 interface User {
     id: number;
     username: string;
-    email: string;
     role: string;
-    totp_enabled: boolean;
     acl_template_id: number | null;
-    custom_acl_json: any;
+    totp_enabled: boolean;
     created_at: string;
 }
 
-interface ACLTemplate {
+interface AclTemplate {
     id: number;
     name: string;
 }
 
 export default function UserManagement() {
     const [users, setUsers] = useState<User[]>([]);
-    const [templates, setTemplates] = useState<ACLTemplate[]>([]);
+    const [templates, setTemplates] = useState<AclTemplate[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [showEditModal, setShowEditModal] = useState(false);
+    const [showModal, setShowModal] = useState(false);
     const [editUser, setEditUser] = useState<User | null>(null);
-    const [formData, setFormData] = useState({
-        username: '',
-        email: '',
-        password: '',
-        role: 'pentester',
-    });
-    const [editForm, setEditForm] = useState({
-        email: '',
-        role: '',
-        acl_template_id: '' as string,
-    });
 
-    const fetchUsers = async () => {
+    // Form state
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [role, setRole] = useState('pentester');
+    const [aclTemplateId, setAclTemplateId] = useState<number | null>(null);
+
+    const fetchAll = async () => {
         try {
-            const res = await apiClient.get('/users');
-            if (res.data.success) {
-                setUsers(res.data.users);
-            }
-        } catch (err: any) {
+            const [usersRes, tplRes] = await Promise.all([
+                apiClient.get('/users'),
+                apiClient.get('/acl/templates'),
+            ]);
+            if (usersRes.data.success) setUsers(usersRes.data.users || usersRes.data.data || []);
+            if (tplRes.data.success) setTemplates(tplRes.data.templates || tplRes.data.data || []);
+        } catch {
             toast.error('Failed to load users');
         } finally {
             setLoading(false);
         }
     };
 
-    const fetchTemplates = async () => {
-        try {
-            const res = await apiClient.get('/acl/templates');
-            if (res.data.success) {
-                setTemplates(res.data.templates);
-            }
-        } catch {
-            // Templates may not be available for non-sysadmin
-        }
+    useEffect(() => { fetchAll(); }, []);
+
+    const openCreate = () => {
+        setEditUser(null);
+        setUsername('');
+        setPassword('');
+        setRole('pentester');
+        setAclTemplateId(null);
+        setShowModal(true);
     };
 
-    useEffect(() => {
-        fetchUsers();
-        fetchTemplates();
-    }, []);
+    const openEdit = (user: User) => {
+        setEditUser(user);
+        setUsername(user.username);
+        setPassword('');
+        setRole(user.role);
+        setAclTemplateId(user.acl_template_id);
+        setShowModal(true);
+    };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await apiClient.post('/users', formData);
-            if (res.data.success) {
-                toast.success('User created successfully');
-                setShowCreateModal(false);
-                setFormData({ username: '', email: '', password: '', role: 'pentester' });
-                fetchUsers();
+            if (editUser) {
+                const payload: any = { role };
+                if (password) payload.password = password;
+                if (aclTemplateId) payload.acl_template_id = aclTemplateId;
+                const res = await apiClient.put(`/users/${editUser.id}`, payload);
+                if (res.data.success) toast.success('User updated');
+                else toast.error(res.data.message || 'Update failed');
+            } else {
+                const payload: any = { username, password, role };
+                if (aclTemplateId) payload.acl_template_id = aclTemplateId;
+                const res = await apiClient.post('/users', payload);
+                if (res.data.success) toast.success('User created');
+                else toast.error(res.data.message || 'Creation failed');
             }
+            setShowModal(false);
+            fetchAll();
         } catch (err: any) {
-            toast.error(err.response?.data?.message || 'Failed to create user');
+            toast.error(err.response?.data?.message || 'Operation failed');
         }
     };
 
-    const handleEditSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!editUser) return;
+    const handleDelete = async (user: User) => {
+        if (!confirm(`Delete user "${user.username}"? This cannot be undone.`)) return;
         try {
-            const payload: any = {};
-            if (editForm.email !== editUser.email) payload.email = editForm.email;
-            if (editForm.role !== editUser.role) payload.role = editForm.role;
-            const templateId = editForm.acl_template_id ? parseInt(editForm.acl_template_id, 10) : null;
-            if (templateId !== editUser.acl_template_id) payload.acl_template_id = templateId;
-
-            if (Object.keys(payload).length === 0) {
-                toast('No changes to save');
-                return;
-            }
-
-            const res = await apiClient.put(`/users/${editUser.id}`, payload);
-            if (res.data.success) {
-                toast.success('User updated — permissions will apply on their next request');
-                setShowEditModal(false);
-                setEditUser(null);
-                fetchUsers();
-            }
-        } catch (err: any) {
-            toast.error(err.response?.data?.message || 'Failed to update user');
-        }
-    };
-
-    const handleDelete = async (id: number) => {
-        if (!confirm('Are you sure you want to delete this user?')) return;
-        try {
-            const res = await apiClient.delete(`/users/${id}`);
+            const res = await apiClient.delete(`/users/${user.id}`);
             if (res.data.success) {
                 toast.success('User deleted');
-                fetchUsers();
+                fetchAll();
+            } else {
+                toast.error(res.data.message || 'Delete failed');
             }
         } catch (err: any) {
-            toast.error(err.response?.data?.message || 'Failed to delete user');
+            toast.error(err.response?.data?.message || 'Delete failed');
         }
-    };
-
-    const openEditModal = (user: User) => {
-        setEditUser(user);
-        setEditForm({
-            email: user.email || '',
-            role: user.role,
-            acl_template_id: user.acl_template_id ? String(user.acl_template_id) : '',
-        });
-        setShowEditModal(true);
-    };
-
-    const getTemplateName = (id: number | null): string => {
-        if (!id) return '—';
-        const t = templates.find(t => t.id === id);
-        return t ? t.name : `#${id}`;
     };
 
     return (
-        <div className="glass-card overflow-hidden">
-            <div className="p-4 border-b border-border-dim flex justify-between items-center">
-                <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
-                    <span className="text-cyber-green">👥</span> User Management
-                </h2>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="btn-glow px-3 py-1.5 text-xs"
-                >
-                    + Add User
-                </button>
-            </div>
-
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                    <thead className="bg-bg-card border-b border-border-dim text-text-muted uppercase tracking-wider">
-                        <tr>
-                            <th className="p-3 font-medium">ID</th>
-                            <th className="p-3 font-medium">Username</th>
-                            <th className="p-3 font-medium">Email</th>
-                            <th className="p-3 font-medium">Role</th>
-                            <th className="p-3 font-medium">ACL</th>
-                            <th className="p-3 font-medium">2FA</th>
-                            <th className="p-3 font-medium">Created</th>
-                            <th className="p-3 font-medium text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-dim">
-                        {loading ? (
-                            <tr>
-                                <td colSpan={8} className="p-8 text-center text-text-muted">Loading users...</td>
-                            </tr>
-                        ) : (
-                            users.map((user) => (
-                                <tr key={user.id} className="hover:bg-bg-card-hover transition-colors">
-                                    <td className="p-3 text-text-secondary font-mono">{user.id}</td>
-                                    <td className="p-3 text-text-primary font-medium">{user.username}</td>
-                                    <td className="p-3 text-text-secondary">{user.email || '-'}</td>
-                                    <td className="p-3">
-                                        <span className={`badge ${user.role === 'sysadmin' ? 'badge-red' :
-                                            user.role === 'admin' ? 'badge-yellow' : 'badge-green'
-                                            }`}>
-                                            {user.role}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 text-text-muted text-[0.65rem]">
-                                        {getTemplateName(user.acl_template_id)}
-                                    </td>
-                                    <td className="p-3">
-                                        <span className={user.totp_enabled ? 'text-cyber-green' : 'text-text-muted'}>
-                                            {user.totp_enabled ? 'Enabled' : 'Disabled'}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 text-text-muted">
-                                        {new Date(user.created_at).toLocaleDateString()}
-                                    </td>
-                                    <td className="p-3 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={() => openEditModal(user)}
-                                                className="btn-outline !text-[0.6rem] !py-0.5 !px-2"
-                                            >
-                                                Edit
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(user.id)}
-                                                className="text-cyber-red hover:text-red-400 transition-colors bg-transparent border-0 cursor-pointer"
-                                                title="Delete User"
-                                            >
-                                                Delete
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
-
-            {/* Create User Modal */}
-            {showCreateModal && (
-                <div className="modal-overlay">
-                    <div className="glass-card w-full max-w-md p-6">
-                        <h3 className="text-lg font-bold text-text-primary mb-4">Create New User</h3>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">Username *</label>
-                                <input
-                                    type="text"
-                                    value={formData.username}
-                                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                                    className="input-cyber"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">Email</label>
-                                <input
-                                    type="email"
-                                    value={formData.email}
-                                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                    className="input-cyber"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">Password *</label>
-                                <input
-                                    type="password"
-                                    value={formData.password}
-                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                    className="input-cyber"
-                                    placeholder="Min 12 chars, Upper, Lower, Number, Special"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">Role *</label>
-                                <select
-                                    value={formData.role}
-                                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                                    className="input-cyber bg-bg-input"
-                                >
-                                    <option value="pentester">Pentester</option>
-                                    <option value="admin">Admin</option>
-                                    <option value="sysadmin">SysAdmin</option>
-                                </select>
-                            </div>
-                            <div className="flex gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCreateModal(false)}
-                                    className="flex-1 py-2 rounded-lg border border-border-dim text-text-secondary hover:bg-bg-card-hover transition-colors cursor-pointer"
-                                >
-                                    Cancel
-                                </button>
-                                <button type="submit" className="flex-1 btn-glow py-2">
-                                    Create User
-                                </button>
-                            </div>
-                        </form>
+        <>
+            <div className="glass-card overflow-hidden">
+                {/* Gradient header */}
+                <div className="card-header card-header-purple">
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                            <span className="text-cyber-purple">👥</span> User Management
+                        </h2>
+                        <span className="badge badge-purple text-[0.6rem]">{users.length} users</span>
                     </div>
+                    <button onClick={openCreate} className="btn-glow text-xs !py-1.5 !px-4">
+                        + Create User
+                    </button>
                 </div>
-            )}
 
-            {/* Edit User Modal */}
-            {showEditModal && editUser && (
-                <div className="modal-overlay">
-                    <div className="glass-card w-full max-w-md p-6">
-                        <h3 className="text-lg font-bold text-text-primary mb-1">
-                            Edit User: <span className="text-cyber-green">{editUser.username}</span>
-                        </h3>
-                        <p className="text-xs text-text-muted mb-4">
-                            Changes to role and ACL template apply dynamically on the user's next request.
-                        </p>
-                        <form onSubmit={handleEditSubmit} className="space-y-4">
+                {loading ? (
+                    <div className="p-8 text-center text-text-muted text-xs animate-pulse">Loading users...</div>
+                ) : users.length === 0 ? (
+                    <div className="p-8 text-center">
+                        <div className="text-3xl mb-3 opacity-20">👥</div>
+                        <p className="text-text-muted text-xs">No users found</p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="table-premium">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Role</th>
+                                    <th>ACL Template</th>
+                                    <th>2FA</th>
+                                    <th>Created</th>
+                                    <th className="text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users.map((user) => (
+                                    <tr key={user.id}>
+                                        <td className="text-text-primary font-semibold">{user.username}</td>
+                                        <td>
+                                            <span className={`badge ${user.role === 'sysadmin' ? 'badge-red' : user.role === 'admin' ? 'badge-yellow' : user.role === 'operator' ? 'badge-blue' : user.role === 'readonly' ? 'badge-purple' : 'badge-green'} text-[0.6rem]`}>
+                                                {user.role}
+                                            </span>
+                                        </td>
+                                        <td className="text-text-secondary text-[0.7rem]">
+                                            {templates.find(t => t.id === user.acl_template_id)?.name || '-'}
+                                        </td>
+                                        <td>
+                                            <span className={`w-2 h-2 rounded-full inline-block ${user.totp_enabled ? 'bg-cyber-green' : 'bg-text-muted'}`} />
+                                        </td>
+                                        <td className="text-text-muted text-[0.65rem]">
+                                            {new Date(user.created_at).toLocaleDateString()}
+                                        </td>
+                                        <td className="text-right">
+                                            <div className="flex items-center gap-1.5 justify-end">
+                                                <button onClick={() => openEdit(user)} className="btn-outline text-[0.6rem] !px-2 !py-0.5">
+                                                    ✏️ Edit
+                                                </button>
+                                                <button onClick={() => handleDelete(user)}
+                                                    className="px-2 py-0.5 text-[0.6rem] text-cyber-red border border-cyber-red/30 rounded bg-transparent cursor-pointer hover:bg-cyber-red/10 transition-colors font-semibold"
+                                                >
+                                                    🗑 Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Modal */}
+            {showModal && (
+                <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}>
+                    <div className="glass-card w-full max-w-md overflow-hidden">
+                        <div className={`card-header ${editUser ? 'card-header-blue' : 'card-header-green'}`}>
+                            <h3 className="text-sm font-bold text-text-primary">
+                                {editUser ? '✏️ Edit User' : '➕ Create User'}
+                            </h3>
+                            <button onClick={() => setShowModal(false)} className="text-text-muted hover:text-text-primary text-sm bg-transparent border-0 cursor-pointer">✕</button>
+                        </div>
+                        <form onSubmit={handleSave} className="p-5 space-y-4">
+                            {!editUser && (
+                                <div>
+                                    <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider font-semibold">Username</label>
+                                    <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="input-cyber" required />
+                                </div>
+                            )}
                             <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">Email</label>
-                                <input
-                                    type="email"
-                                    value={editForm.email}
-                                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                                    className="input-cyber"
-                                />
+                                <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider font-semibold">
+                                    {editUser ? 'New Password (leave blank to keep)' : 'Password'}
+                                </label>
+                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input-cyber" {...(!editUser ? { required: true } : {})} />
                             </div>
                             <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">Role</label>
-                                <select
-                                    value={editForm.role}
-                                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                                    className="input-cyber bg-bg-input"
-                                >
+                                <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider font-semibold">Role</label>
+                                <select value={role} onChange={(e) => setRole(e.target.value)} className="input-cyber bg-bg-input">
+                                    <option value="readonly">Read Only</option>
                                     <option value="pentester">Pentester</option>
+                                    <option value="operator">Operator</option>
                                     <option value="admin">Admin</option>
-                                    <option value="sysadmin">SysAdmin</option>
+                                    <option value="sysadmin">Sysadmin</option>
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">ACL Template</label>
-                                <select
-                                    value={editForm.acl_template_id}
-                                    onChange={(e) => setEditForm({ ...editForm, acl_template_id: e.target.value })}
-                                    className="input-cyber bg-bg-input"
-                                >
-                                    <option value="">None (use role defaults)</option>
+                                <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider font-semibold">ACL Template</label>
+                                <select value={aclTemplateId || ''} onChange={(e) => setAclTemplateId(e.target.value ? parseInt(e.target.value) : null)} className="input-cyber bg-bg-input">
+                                    <option value="">None</option>
                                     {templates.map(t => (
                                         <option key={t.id} value={t.id}>{t.name}</option>
                                     ))}
                                 </select>
-                                <p className="text-[0.6rem] text-text-muted mt-1">
-                                    Assigning a template overrides role-based permissions for this user.
-                                </p>
                             </div>
-
-                            <div className="p-3 bg-cyber-green/5 border border-cyber-green/20 rounded-lg">
-                                <p className="text-[0.65rem] text-text-secondary">
-                                    <span className="text-cyber-green font-bold">⚡ Live Update:</span>{' '}
-                                    Permission changes take effect immediately on the user's next API request.
-                                    No logout/re-login required.
-                                </p>
-                            </div>
-
-                            <div className="flex gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => { setShowEditModal(false); setEditUser(null); }}
-                                    className="flex-1 py-2 rounded-lg border border-border-dim text-text-secondary hover:bg-bg-card-hover transition-colors cursor-pointer"
-                                >
-                                    Cancel
+                            <div className="flex gap-3 pt-2">
+                                <button type="submit" className="btn-glow flex-1">
+                                    {editUser ? 'Save Changes' : 'Create User'}
                                 </button>
-                                <button type="submit" className="flex-1 btn-glow py-2">
-                                    Save Changes
+                                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
+                                    Cancel
                                 </button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }

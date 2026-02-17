@@ -1,0 +1,3 @@
+/api/rsf/jobs	❌ 404	The Rust API doesn't have /api/jobs
+/api/rsf/config	❌ 404	The Rust API doesn't have /api/config
+/api/rsf/target	❌ 404	The Rust API doesn't have /api/target
