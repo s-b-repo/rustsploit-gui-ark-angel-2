@@ -39,7 +39,7 @@ function initializeSchema(): void {
       username TEXT NOT NULL UNIQUE,
       email TEXT NOT NULL DEFAULT '',
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('sysadmin','admin','pentester')) DEFAULT 'pentester',
+      role TEXT NOT NULL CHECK(role IN ('sysadmin','admin','operator','pentester','readonly')) DEFAULT 'pentester',
       totp_secret TEXT,
       totp_enabled INTEGER NOT NULL DEFAULT 0,
       acl_template_id INTEGER REFERENCES acl_templates(id) ON DELETE SET NULL,
@@ -121,7 +121,7 @@ export interface UserRow {
     username: string;
     email: string;
     password_hash: string;
-    role: 'sysadmin' | 'admin' | 'pentester';
+    role: 'sysadmin' | 'admin' | 'operator' | 'pentester' | 'readonly';
     totp_secret: string | null;
     totp_enabled: number;
     acl_template_id: number | null;
@@ -183,10 +183,40 @@ export function getEffectivePermissions(user: UserRow): Permissions {
         return {
             panels: {
                 modules: { view: true, run: true },
-                jobs: { view: true },
+                jobs: { view: true, kill: true },
                 target: { view: true, set: true },
                 status: { view: true },
                 users: { view: true, manage: true },
+                acl: { view: false, manage: false },
+                settings: { view: true },
+            },
+        };
+    }
+
+    // operator gets ops but no user/acl management
+    if (user.role === 'operator') {
+        return {
+            panels: {
+                modules: { view: true, run: true },
+                jobs: { view: true, kill: true },
+                target: { view: true, set: true },
+                status: { view: true },
+                users: { view: false, manage: false },
+                acl: { view: false, manage: false },
+                settings: { view: true },
+            },
+        };
+    }
+
+    // readonly — view only, no execution
+    if (user.role === 'readonly') {
+        return {
+            panels: {
+                modules: { view: true, run: false },
+                jobs: { view: true, kill: false },
+                target: { view: true, set: false },
+                status: { view: true },
+                users: { view: false, manage: false },
                 acl: { view: false, manage: false },
                 settings: { view: true },
             },

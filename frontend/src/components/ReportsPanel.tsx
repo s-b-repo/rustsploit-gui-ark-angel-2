@@ -49,8 +49,10 @@ export default function ReportsPanel() {
                 setJobs(jobList);
                 computeStats(jobList);
             }
-        } catch {
-            toast.error('Failed to load job data');
+        } catch (err: any) {
+            if (err.response?.status !== 404) {
+                toast.error('Failed to load job data');
+            }
         } finally {
             setLoading(false);
         }
@@ -185,28 +187,66 @@ export default function ReportsPanel() {
         <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <StatCard label="Total Jobs" value={stats.total} icon="📊" color="text-cyber-blue" />
-                <StatCard label="Completed" value={stats.completed} icon="✅" color="text-cyber-green" />
-                <StatCard label="Failed" value={stats.failed} icon="❌" color="text-cyber-red" />
-                <StatCard label="Running" value={stats.running} icon="⚡" color="text-cyber-yellow" />
-                <StatCard label="Success Rate" value={`${stats.successRate.toFixed(0)}%`} icon="📈" color="text-cyber-green" />
-                <StatCard label="Avg Duration" value={formatDuration(stats.avgDurationMs)} icon="⏱️" color="text-cyber-blue" />
+                <div className="stat-card stat-card-blue">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm">📊</span>
+                        <span className="text-[0.6rem] text-text-muted uppercase tracking-wider">Total Jobs</span>
+                    </div>
+                    <div className="text-lg font-bold text-cyber-blue">{stats.total}</div>
+                </div>
+                <div className="stat-card stat-card-green">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm">✅</span>
+                        <span className="text-[0.6rem] text-text-muted uppercase tracking-wider">Completed</span>
+                    </div>
+                    <div className="text-lg font-bold text-cyber-green">{stats.completed}</div>
+                </div>
+                <div className="stat-card stat-card-red">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm">❌</span>
+                        <span className="text-[0.6rem] text-text-muted uppercase tracking-wider">Failed</span>
+                    </div>
+                    <div className="text-lg font-bold text-cyber-red">{stats.failed}</div>
+                </div>
+                <div className="stat-card stat-card-yellow">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm">⚡</span>
+                        <span className="text-[0.6rem] text-text-muted uppercase tracking-wider">Running</span>
+                    </div>
+                    <div className="text-lg font-bold text-cyber-yellow">{stats.running}</div>
+                </div>
+                <div className="stat-card stat-card-green">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm">📈</span>
+                        <span className="text-[0.6rem] text-text-muted uppercase tracking-wider">Success Rate</span>
+                    </div>
+                    <div className="text-lg font-bold text-cyber-green">{stats.successRate.toFixed(0)}%</div>
+                </div>
+                <div className="stat-card stat-card-blue">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm">⏱️</span>
+                        <span className="text-[0.6rem] text-text-muted uppercase tracking-wider">Avg Duration</span>
+                    </div>
+                    <div className="text-lg font-bold text-cyber-blue">{formatDuration(stats.avgDurationMs)}</div>
+                </div>
             </div>
 
             {/* Module Breakdown */}
             {Object.keys(stats.moduleBreakdown).length > 0 && (
-                <div className="glass-card p-4">
-                    <h3 className="text-xs font-bold text-text-primary mb-3 flex items-center gap-2">
-                        <span className="text-cyber-magenta">📦</span> Module Usage
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
+                <div className="glass-card overflow-hidden">
+                    <div className="card-header card-header-purple">
+                        <h3 className="text-xs font-bold text-text-primary flex items-center gap-2">
+                            <span className="text-cyber-purple">📦</span> Module Usage
+                        </h3>
+                    </div>
+                    <div className="p-4 flex flex-wrap gap-2">
                         {Object.entries(stats.moduleBreakdown)
                             .sort((a, b) => b[1] - a[1])
                             .slice(0, 12)
                             .map(([mod, count]) => (
                                 <span
                                     key={mod}
-                                    className="bg-bg-card px-2.5 py-1 rounded text-[0.65rem] text-text-secondary border border-border-dim cursor-pointer hover:border-cyber-green/40 transition-colors"
+                                    className="bg-bg-card px-2.5 py-1.5 rounded-lg text-[0.65rem] text-text-secondary border border-border-dim cursor-pointer hover:border-cyber-green/40 hover:bg-bg-card-hover transition-all"
                                     onClick={() => setSearchQuery(mod)}
                                     title={`Click to filter by ${mod}`}
                                 >
@@ -219,80 +259,81 @@ export default function ReportsPanel() {
             )}
 
             {/* Filters & Actions */}
-            <div className="glass-card p-4">
-                <div className="flex flex-wrap items-center gap-3">
-                    {/* Search */}
-                    <div className="flex-1 min-w-[200px]">
-                        <input
-                            type="text"
-                            placeholder="Search module, target, or job ID..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-bg-card border border-border-dim rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-cyber-green/50"
-                        />
-                    </div>
+            <div className="glass-card overflow-hidden">
+                <div className="card-header card-header-green">
+                    <div className="flex flex-wrap items-center gap-3 flex-1">
+                        {/* Search */}
+                        <div className="relative flex-1 min-w-[200px]">
+                            <input
+                                type="text"
+                                placeholder="Search module, target, or job ID..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="input-cyber pl-8 text-xs !py-2"
+                            />
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-xs">🔍</span>
+                        </div>
 
-                    {/* Status Filter */}
-                    <div className="flex items-center gap-1">
-                        {(['all', 'Running', 'Completed', 'Failed', 'Timeout'] as StatusFilter[]).map(s => (
-                            <button
-                                key={s}
-                                onClick={() => setStatusFilter(s)}
-                                className={`px-3 py-1.5 rounded text-[0.65rem] font-semibold transition-all border-0 cursor-pointer ${statusFilter === s
-                                        ? 'bg-cyber-green/20 text-cyber-green'
-                                        : 'bg-bg-card text-text-muted hover:text-text-primary'
-                                    }`}
-                            >
-                                {s === 'all' ? 'All' : s}
-                            </button>
-                        ))}
+                        {/* Status Filter */}
+                        <div className="flex items-center gap-1">
+                            {(['all', 'Running', 'Completed', 'Failed', 'Timeout'] as StatusFilter[]).map(s => (
+                                <button
+                                    key={s}
+                                    onClick={() => setStatusFilter(s)}
+                                    className={`px-3 py-1.5 rounded-lg text-[0.65rem] font-semibold transition-all border cursor-pointer ${statusFilter === s
+                                        ? 'bg-cyber-green/15 text-cyber-green border-cyber-green/30'
+                                        : 'bg-transparent text-text-muted hover:text-text-primary border-transparent'
+                                        }`}
+                                >
+                                    {s === 'all' ? 'All' : s}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 ml-2">
                         <button
                             onClick={fetchJobs}
-                            className="px-3 py-1.5 rounded text-[0.65rem] font-semibold bg-bg-card text-text-muted hover:text-cyber-green transition-colors border-0 cursor-pointer"
+                            className="btn-outline text-[0.65rem]"
                         >
                             ↻ Refresh
                         </button>
                         <button
                             onClick={exportJSON}
                             disabled={filteredJobs.length === 0}
-                            className="px-3 py-1.5 rounded text-[0.65rem] font-semibold bg-cyber-green/10 text-cyber-green hover:bg-cyber-green/20 transition-colors border-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="btn-glow text-[0.65rem] !py-1.5 !px-3 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                            📥 Export JSON
+                            📥 Export
                         </button>
                     </div>
                 </div>
 
-                <div className="mt-2 text-[0.6rem] text-text-muted">
+                <div className="px-3 py-1.5 text-[0.6rem] text-text-muted bg-bg-secondary/30 border-b border-border-dim/50">
                     Showing {filteredJobs.length} of {jobs.length} job(s)
                 </div>
-            </div>
 
-            {/* Job History Table */}
-            <div className="glass-card overflow-hidden">
+                {/* Job History Table */}
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                        <thead className="bg-bg-card border-b border-border-dim text-text-muted uppercase tracking-wider">
+                    <table className="table-premium">
+                        <thead>
                             <tr>
-                                <th className="p-3 font-medium">Job ID</th>
-                                <th className="p-3 font-medium cursor-pointer hover:text-text-primary select-none" onClick={() => toggleSort('module')}>
+                                <th>Job ID</th>
+                                <th className="cursor-pointer hover:text-text-primary select-none" onClick={() => toggleSort('module')}>
                                     Module{sortIndicator('module')}
                                 </th>
-                                <th className="p-3 font-medium">Target</th>
-                                <th className="p-3 font-medium">Status</th>
-                                <th className="p-3 font-medium cursor-pointer hover:text-text-primary select-none" onClick={() => toggleSort('duration_ms')}>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th className="cursor-pointer hover:text-text-primary select-none" onClick={() => toggleSort('duration_ms')}>
                                     Duration{sortIndicator('duration_ms')}
                                 </th>
-                                <th className="p-3 font-medium cursor-pointer hover:text-text-primary select-none" onClick={() => toggleSort('started_at')}>
+                                <th className="cursor-pointer hover:text-text-primary select-none" onClick={() => toggleSort('started_at')}>
                                     Started{sortIndicator('started_at')}
                                 </th>
-                                <th className="p-3 font-medium text-right">Output</th>
+                                <th className="text-right">Output</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-border-dim">
+                        <tbody>
                             {filteredJobs.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} className="p-8 text-center text-text-muted">
@@ -307,22 +348,22 @@ export default function ReportsPanel() {
                                     <>
                                         <tr
                                             key={job.job_id}
-                                            className={`hover:bg-bg-card-hover transition-colors cursor-pointer ${expandedJob === job.job_id ? 'bg-bg-card-hover' : ''}`}
+                                            className={`cursor-pointer ${expandedJob === job.job_id ? 'bg-bg-card-hover' : ''}`}
                                             onClick={() => fetchOutput(job.job_id)}
                                         >
-                                            <td className="p-3 font-mono text-text-secondary">{job.job_id.slice(0, 8)}</td>
-                                            <td className="p-3 text-text-primary font-medium">{job.module}</td>
-                                            <td className="p-3 text-text-secondary font-mono text-[0.65rem]">{job.target}</td>
-                                            <td className="p-3">
+                                            <td className="font-mono text-text-secondary text-[0.7rem]">{job.job_id.slice(0, 8)}</td>
+                                            <td className="text-text-primary font-medium">{job.module}</td>
+                                            <td className="text-text-secondary font-mono text-[0.65rem]">{job.target}</td>
+                                            <td>
                                                 <StatusBadge status={job.status} startedAt={job.started_at} />
                                             </td>
-                                            <td className="p-3 text-text-secondary">
+                                            <td className="text-text-secondary">
                                                 <DurationCell job={job} />
                                             </td>
-                                            <td className="p-3 text-text-muted text-[0.65rem]">
+                                            <td className="text-text-muted text-[0.65rem]">
                                                 {new Date(job.started_at).toLocaleString()}
                                             </td>
-                                            <td className="p-3 text-right">
+                                            <td className="text-right">
                                                 <span className="text-cyber-blue text-[0.65rem]">
                                                     {expandedJob === job.job_id ? '▲ Hide' : '▼ View'}
                                                 </span>
@@ -333,7 +374,7 @@ export default function ReportsPanel() {
                                                 <td colSpan={7} className="p-0">
                                                     <div className="terminal-output m-3 max-h-[400px] overflow-auto text-[0.65rem]">
                                                         {loadingOutput ? (
-                                                            <span className="text-text-muted italic">Loading output...</span>
+                                                            <span className="text-text-muted italic animate-pulse">Loading output...</span>
                                                         ) : (
                                                             <pre className="whitespace-pre-wrap break-all">{expandedOutput}</pre>
                                                         )}
@@ -353,18 +394,6 @@ export default function ReportsPanel() {
 }
 
 /* ─── Sub-components ──────────────────────────────────────────── */
-
-function StatCard({ label, value, icon, color }: { label: string; value: string | number; icon: string; color: string }) {
-    return (
-        <div className="bg-bg-secondary rounded-lg p-3 border border-border-dim">
-            <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm">{icon}</span>
-                <span className="text-[0.6rem] text-text-muted uppercase tracking-wider">{label}</span>
-            </div>
-            <div className={`text-lg font-bold ${color}`}>{value}</div>
-        </div>
-    );
-}
 
 function StatusBadge({ status, startedAt }: { status: string; startedAt: string }) {
     const cls = status === 'Running'

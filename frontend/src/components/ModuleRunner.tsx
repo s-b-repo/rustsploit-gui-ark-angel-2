@@ -15,6 +15,7 @@ interface CategoryMeta {
     color: string;
     accent: string;
     cssClass: string;
+    headerClass: string;
     description: string;
 }
 
@@ -25,6 +26,7 @@ const CATEGORY_MAP: Record<Category, CategoryMeta> = {
         color: 'text-cyber-red',
         accent: 'border-cyber-red',
         cssClass: 'cat-exploit',
+        headerClass: 'card-header-red',
         description: 'Execute exploit modules against the target. Configure target and optional parameters below.',
     },
     scanners: {
@@ -33,6 +35,7 @@ const CATEGORY_MAP: Record<Category, CategoryMeta> = {
         color: 'text-cyber-blue',
         accent: 'border-cyber-blue',
         cssClass: 'cat-scanner',
+        headerClass: 'card-header-blue',
         description: 'Run reconnaissance and scanning modules to enumerate and discover services.',
     },
     creds: {
@@ -41,6 +44,7 @@ const CATEGORY_MAP: Record<Category, CategoryMeta> = {
         color: 'text-cyber-yellow',
         accent: 'border-cyber-yellow',
         cssClass: 'cat-creds',
+        headerClass: 'card-header-yellow',
         description: 'Bruteforce and credential testing modules. Configure wordlists and authentication parameters.',
     },
     camxploit: {
@@ -49,6 +53,7 @@ const CATEGORY_MAP: Record<Category, CategoryMeta> = {
         color: 'text-cyber-purple',
         accent: 'border-cyber-purple',
         cssClass: 'cat-camxploit',
+        headerClass: 'card-header-purple',
         description: 'Autonomous camera exploitation. Scans ports, fingerprints devices, tests default credentials, and detects live streams — all automatically.',
     },
     unknown: {
@@ -57,6 +62,7 @@ const CATEGORY_MAP: Record<Category, CategoryMeta> = {
         color: 'text-cyber-green',
         accent: 'border-cyber-green',
         cssClass: '',
+        headerClass: 'card-header-green',
         description: 'Run the selected module against the target.',
     },
 };
@@ -82,7 +88,6 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
     const [comboMode, setComboMode] = useState(false);
     const [verbose, setVerbose] = useState(false);
     const [running, setRunning] = useState(false);
-    // Custom fields for per-module extension (exploit modules)
     const [customFields, setCustomFields] = useState<Record<string, string>>({});
 
     const category = useMemo(() => selectedModule ? detectCategory(selectedModule) : 'unknown', [selectedModule]);
@@ -96,7 +101,6 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
         }
         setRunning(true);
 
-        // Build payload based on category
         const payload: any = {
             module: selectedModule,
             target: target.trim(),
@@ -106,7 +110,6 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
         if (category === 'exploits') {
             if (port) payload.port = parseInt(port, 10);
             if (timeout) payload.timeout = parseInt(timeout, 10);
-            // Include any custom fields
             Object.entries(customFields).forEach(([key, value]) => {
                 if (value.trim()) payload[key] = value.trim();
             });
@@ -123,7 +126,6 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
             if (stopOnSuccess) payload.stop_on_success = true;
             if (comboMode) payload.combo_mode = true;
         }
-        // camxploit: only target + verbose needed
 
         try {
             const res = await apiClient.post('/rsf/run', payload);
@@ -158,7 +160,7 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
     if (!selectedModule) {
         return (
             <div className="glass-card p-8 text-center">
-                <div className="text-4xl mb-4 opacity-30">⚡</div>
+                <div className="text-4xl mb-4 opacity-20">⚡</div>
                 <p className="text-text-muted text-sm">Select a module from the browser to configure and run it</p>
             </div>
         );
@@ -168,28 +170,32 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
 
     return (
         <div className={`glass-card overflow-hidden ${meta.cssClass}`}>
-            {/* Header */}
-            <div className="p-4 border-b border-border-dim">
-                <div className="flex items-center gap-3 mb-2">
+            {/* Gradient Header */}
+            <div className={`card-header ${meta.headerClass}`}>
+                <div className="flex items-center gap-3">
                     <span className="text-xl">{meta.icon}</span>
                     <div>
-                        <span className={`badge ${category === 'exploits' ? 'badge-red' : category === 'scanners' ? 'badge-blue' : category === 'creds' ? 'badge-yellow' : category === 'camxploit' ? 'badge-purple' : 'badge-green'} text-[0.6rem]`}>
+                        <span className={`badge ${category === 'exploits' ? 'badge-red' : category === 'scanners' ? 'badge-blue' : category === 'creds' ? 'badge-yellow' : category === 'camxploit' ? 'badge-purple' : 'badge-green'} text-[0.55rem]`}>
                             {meta.label}
                         </span>
                         <h2 className="text-sm font-bold text-text-primary mt-1 font-mono">{moduleName}</h2>
                     </div>
                 </div>
-                <p className="text-xs text-text-muted leading-relaxed">{meta.description}</p>
-                <div className="mt-2 text-[0.65rem] text-text-muted font-mono bg-bg-input px-2 py-1 rounded border border-border-dim inline-block">
+                <div className="text-[0.6rem] text-text-muted font-mono bg-bg-input px-2 py-1 rounded border border-border-dim max-w-[200px] truncate">
                     {selectedModule}
                 </div>
             </div>
 
+            {/* Description */}
+            <div className="px-5 py-3 border-b border-border-dim/50">
+                <p className="text-xs text-text-muted leading-relaxed">{meta.description}</p>
+            </div>
+
             {/* Form */}
-            <form onSubmit={handleRun} className="p-4 space-y-4">
+            <form onSubmit={handleRun} className="p-5 space-y-4">
                 {/* Target — always shown */}
                 <div>
-                    <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">
+                    <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider font-semibold">
                         Target *
                     </label>
                     <input
@@ -218,7 +224,6 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
                             </div>
                         </div>
 
-                        {/* Custom per-module fields */}
                         {Object.keys(customFields).length > 0 && (
                             <div className="space-y-2 p-3 bg-bg-input rounded-lg border border-border-dim">
                                 <div className="text-[0.65rem] text-text-muted uppercase tracking-wider mb-1">Custom Parameters</div>
@@ -247,27 +252,25 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
 
                 {/* ── SCANNER FORM ─────────── */}
                 {category === 'scanners' && (
-                    <>
-                        <div className="grid grid-cols-3 gap-3">
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Concurrency</label>
-                                <input type="number" value={concurrency} onChange={(e) => setConcurrency(e.target.value)} className="input-cyber" placeholder="10" />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Timeout (sec)</label>
-                                <input type="number" value={timeout} onChange={(e) => setTimeout(e.target.value)} className="input-cyber" placeholder="30" />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Scan Method</label>
-                                <select value={scanMethod} onChange={(e) => setScanMethod(e.target.value)} className="input-cyber bg-bg-input">
-                                    <option value="">Default</option>
-                                    <option value="syn">SYN Scan</option>
-                                    <option value="connect">Connect Scan</option>
-                                    <option value="udp">UDP Scan</option>
-                                </select>
-                            </div>
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Concurrency</label>
+                            <input type="number" value={concurrency} onChange={(e) => setConcurrency(e.target.value)} className="input-cyber" placeholder="10" />
                         </div>
-                    </>
+                        <div>
+                            <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Timeout (sec)</label>
+                            <input type="number" value={timeout} onChange={(e) => setTimeout(e.target.value)} className="input-cyber" placeholder="30" />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Scan Method</label>
+                            <select value={scanMethod} onChange={(e) => setScanMethod(e.target.value)} className="input-cyber bg-bg-input">
+                                <option value="">Default</option>
+                                <option value="syn">SYN Scan</option>
+                                <option value="connect">Connect Scan</option>
+                                <option value="udp">UDP Scan</option>
+                            </select>
+                        </div>
+                    </div>
                 )}
 
                 {/* ── CREDS / BRUTEFORCE FORM ─────────── */}
@@ -284,7 +287,7 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
                             </div>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Username Wordlist</label>
                                 <input type="text" value={usernameWordlist} onChange={(e) => setUsernameWordlist(e.target.value)} className="input-cyber" placeholder="/path/to/usernames.txt" />
@@ -293,10 +296,10 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
                                 <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Password Wordlist</label>
                                 <input type="text" value={passwordWordlist} onChange={(e) => setPasswordWordlist(e.target.value)} className="input-cyber" placeholder="/path/to/passwords.txt" />
                             </div>
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Path Wordlist</label>
-                                <input type="text" value={pathWordlist} onChange={(e) => setPathWordlist(e.target.value)} className="input-cyber" placeholder="/path/to/paths.txt (optional)" />
-                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider">Path Wordlist</label>
+                            <input type="text" value={pathWordlist} onChange={(e) => setPathWordlist(e.target.value)} className="input-cyber" placeholder="/path/to/paths.txt (optional)" />
                         </div>
 
                         <div className="flex flex-wrap items-center gap-6 py-2">
@@ -327,7 +330,7 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
                                 <p className="text-text-primary font-medium">Autonomous Camera Exploitation</p>
                                 <p>CamXploit will automatically:</p>
                                 <ul className="list-disc list-inside space-y-1 text-text-muted">
-                                    <li>Scan {'>'}200 common camera ports</li>
+                                    <li>Scan {'>'} 200 common camera ports</li>
                                     <li>Fingerprint camera make/model via HTTP headers</li>
                                     <li>Test 80+ default credential pairs (HTTP + RTSP)</li>
                                     <li>Detect and enumerate live video streams</li>
@@ -356,7 +359,7 @@ export default function ModuleRunner({ selectedModule, onJobStarted }: Props) {
                 <button
                     type="submit"
                     disabled={running || !target.trim()}
-                    className="btn-glow w-full text-sm"
+                    className="btn-glow w-full text-sm py-3"
                 >
                     {running ? (
                         <span className="flex items-center justify-center gap-2">

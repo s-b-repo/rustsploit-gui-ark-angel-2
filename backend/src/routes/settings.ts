@@ -1,8 +1,10 @@
 import { Router, Response } from 'express';
 import { authenticator } from 'otplib';
 import qrcode from 'qrcode';
+import axios from 'axios';
 import { getDb, getUserById } from '../database';
 import { validatePasswordComplexity, hashPassword, verifyPassword, getComplexityRules } from '../password';
+import { getRsfApiKey, setRsfApiKey } from './proxy';
 import { authenticateJWT, AuthenticatedRequest } from '../middleware';
 
 const router = Router();
@@ -157,6 +159,176 @@ router.delete('/totp', (req: AuthenticatedRequest, res: Response): void => {
     getDb().prepare("UPDATE users SET totp_enabled = 0, totp_secret = NULL, updated_at = datetime('now') WHERE id = ?").run(req.user.id);
 
     res.json({ success: true, message: 'TOTP disabled successfully' });
+});
+
+// ─── RSF API Connection Management (sysadmin-only) ────────────────────
+
+const RSF_API_URL = process.env.RSF_API_URL || 'http://127.0.0.1:8080';
+
+/**
+ * GET /api/settings/rsf-connection
+ * Test connectivity to the RSF API. Returns status, latency, and masked key info.
+ * Sysadmin only.
+ */
+router.get('/rsf-connection', (req: AuthenticatedRequest, res: Response): void => {
+    if (!req.user || req.user.role !== 'sysadmin') {
+        res.status(403).json({ success: false, message: 'Sysadmin access required' });
+        return;
+    }
+
+    const start = Date.now();
+    const currentKey = getRsfApiKey();
+
+    axios.get(`${RSF_API_URL}/health`, {
+        headers: { Authorization: `Bearer ${currentKey}` },
+        timeout: 5000,
+        validateStatus: () => true,
+    })
+        .then((resp) => {
+            const latency = Date.now() - start;
+            const keyPreview = currentKey ? `****${currentKey.slice(-4)}` : 'NOT SET';
+
+            if (resp.status === 200) {
+                res.json({
+                    success: true,
+                    status: 'connected',
+                    latency,
+                    keyPreview,
+                    message: `RSF API reachable (${latency}ms)`,
+                });
+            } else if (resp.status === 401 || resp.status === 403) {
+                res.json({
+                    success: true,
+                    status: 'auth_failed',
+                    latency,
+                    keyPreview,
+                    httpStatus: resp.status,
+                    message: 'RSF API reachable but authentication failed — API key may be invalid or rotated',
+                });
+            } else {
+                res.json({
+                    success: true,
+                    status: 'degraded',
+                    latency,
+                    keyPreview,
+                    httpStatus: resp.status,
+                    message: `RSF API returned status ${resp.status}`,
+                });
+            }
+        })
+        .catch((err) => {
+            const latency = Date.now() - start;
+            const keyPreview = currentKey ? `****${currentKey.slice(-4)}` : 'NOT SET';
+
+            if (err.code === 'ECONNREFUSED') {
+                res.json({
+                    success: true,
+                    status: 'offline',
+                    latency,
+                    keyPreview,
+                    message: 'RSF API is not reachable (connection refused)',
+                });
+            } else if (err.code === 'ETIMEDOUT' || err.code === 'ECONNABORTED') {
+                res.json({
+                    success: true,
+                    status: 'timeout',
+                    latency,
+                    keyPreview,
+                    message: 'RSF API connection timed out',
+                });
+            } else {
+                res.json({
+                    success: true,
+                    status: 'error',
+                    latency,
+                    keyPreview,
+                    message: `Connection error: ${err.message}`,
+                });
+            }
+        });
+});
+
+/**
+ * PUT /api/settings/rsf-api-key
+ * Update the RSF API key at runtime. Requires sysadmin + password confirmation.
+ * After updating, tests the connection with the new key.
+ */
+router.put('/rsf-api-key', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    if (!req.user || req.user.role !== 'sysadmin') {
+        res.status(403).json({ success: false, message: 'Sysadmin access required' });
+        return;
+    }
+
+    const { apiKey, password } = req.body;
+
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+        res.status(400).json({ success: false, message: 'API key is required' });
+        return;
+    }
+
+    if (!password) {
+        res.status(400).json({ success: false, message: 'Password confirmation is required' });
+        return;
+    }
+
+    // Verify sysadmin password
+    if (!verifyPassword(password, req.user.password_hash)) {
+        res.status(401).json({ success: false, message: 'Invalid password' });
+        return;
+    }
+
+    // Save old key in case we need to roll back
+    const oldKey = getRsfApiKey();
+    const newKey = apiKey.trim();
+
+    // Apply the new key
+    setRsfApiKey(newKey);
+
+    // Test connectivity with the new key
+    try {
+        const start = Date.now();
+        const resp = await axios.get(`${RSF_API_URL}/health`, {
+            headers: { Authorization: `Bearer ${newKey}` },
+            timeout: 5000,
+            validateStatus: () => true,
+        });
+        const latency = Date.now() - start;
+
+        if (resp.status === 200) {
+            res.json({
+                success: true,
+                connectionStatus: 'connected',
+                latency,
+                keyPreview: `****${newKey.slice(-4)}`,
+                message: `API key updated and connection verified (${latency}ms)`,
+            });
+        } else if (resp.status === 401 || resp.status === 403) {
+            // New key also fails auth — roll back
+            setRsfApiKey(oldKey);
+            res.status(400).json({
+                success: false,
+                connectionStatus: 'auth_failed',
+                message: 'New API key was rejected by RSF API (401/403). Key was NOT changed.',
+            });
+        } else {
+            // Key was set, but RSF returned a non-expected status
+            res.json({
+                success: true,
+                connectionStatus: 'degraded',
+                latency,
+                keyPreview: `****${newKey.slice(-4)}`,
+                message: `API key updated but RSF returned status ${resp.status}`,
+            });
+        }
+    } catch (err: any) {
+        // Connection failed entirely — still apply the key since it might just be a network issue
+        res.json({
+            success: true,
+            connectionStatus: 'offline',
+            keyPreview: `****${newKey.slice(-4)}`,
+            message: `API key updated but RSF API is not currently reachable: ${err.message}`,
+        });
+    }
 });
 
 export default router;

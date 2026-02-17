@@ -47,7 +47,6 @@ export default function ModuleBrowser({ onSelectModule, selectedModule }: Props)
                 if (!node[parts[i]]) node[parts[i]] = {};
                 node = node[parts[i]];
             }
-            const leaf = parts[parts.length - 1];
             if (!node._items) node._items = [];
             node._items.push(mod);
         }
@@ -81,12 +80,12 @@ export default function ModuleBrowser({ onSelectModule, selectedModule }: Props)
                     <div key={fullPath}>
                         <button
                             onClick={() => toggleExpand(fullPath)}
-                            className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-md hover:bg-bg-card-hover transition-colors text-xs cursor-pointer bg-transparent border-0 text-text-primary"
-                            style={{ paddingLeft: `${depth * 16 + 8}px` }}
+                            className="flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg hover:bg-bg-card-hover transition-all text-xs cursor-pointer bg-transparent border-0 text-text-primary group"
+                            style={{ paddingLeft: `${depth * 16 + 12}px` }}
                         >
-                            <span className="text-text-muted text-[0.7rem]">{isExpanded ? '▼' : '▶'}</span>
+                            <span className="text-text-muted text-[0.65rem] transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
                             <span className="text-cyber-blue">📁</span>
-                            <span className="font-semibold">{key}</span>
+                            <span className="font-semibold group-hover:text-cyber-green transition-colors">{key}</span>
                         </button>
                         {isExpanded && renderTree(value, fullPath, depth + 1)}
                     </div>
@@ -103,11 +102,11 @@ export default function ModuleBrowser({ onSelectModule, selectedModule }: Props)
                     <button
                         key={mod}
                         onClick={() => onSelectModule(mod)}
-                        className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-md transition-colors text-xs cursor-pointer border-0 ${isSelected
-                                ? 'bg-cyber-green/15 text-cyber-green border border-border-glow'
-                                : 'text-text-secondary hover:text-text-primary hover:bg-bg-card-hover bg-transparent'
+                        className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg transition-all text-xs cursor-pointer border-0 ${isSelected
+                            ? 'bg-cyber-green/15 text-cyber-green border-l-2 border-cyber-green shadow-[inset_0_0_20px_rgba(0,255,65,0.05)]'
+                            : 'text-text-secondary hover:text-text-primary hover:bg-bg-card-hover bg-transparent hover:border-l-2 hover:border-cyber-green/30'
                             }`}
-                        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+                        style={{ paddingLeft: `${depth * 16 + 12}px` }}
                     >
                         <span className="text-[0.7rem]">⚡</span>
                         <span className="truncate">{name}</span>
@@ -120,51 +119,54 @@ export default function ModuleBrowser({ onSelectModule, selectedModule }: Props)
     };
 
     return (
-        <div className="glass-card p-4">
-            <div className="flex items-center justify-between mb-4">
+        <div className="glass-card overflow-hidden">
+            {/* Gradient header */}
+            <div className="card-header card-header-green">
                 <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
                     <span className="text-cyber-green">📦</span> Module Browser
                 </h2>
-                <span className="badge badge-green">{flatModules.length} modules</span>
+                <span className="badge badge-green text-[0.6rem]">{flatModules.length} modules</span>
             </div>
 
-            {/* Search */}
-            <div className="relative mb-3">
-                <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="input-cyber pl-8 text-xs"
-                    placeholder="Search modules..."
-                />
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-xs">🔍</span>
-            </div>
+            <div className="p-4">
+                {/* Search */}
+                <div className="relative mb-3">
+                    <input
+                        type="text"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="input-cyber pl-9 text-xs"
+                        placeholder="Search modules..."
+                    />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-xs">🔍</span>
+                </div>
 
-            {/* Module list */}
-            <div className="max-h-[400px] overflow-y-auto space-y-0.5">
-                {loading ? (
-                    <div className="text-center py-8 text-text-muted text-xs">Loading modules...</div>
-                ) : search ? (
-                    filtered.length > 0 ? (
-                        filtered.map((mod) => (
-                            <button
-                                key={mod}
-                                onClick={() => onSelectModule(mod)}
-                                className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-md transition-colors text-xs cursor-pointer border-0 ${selectedModule === mod
+                {/* Module list */}
+                <div className="max-h-[400px] overflow-y-auto space-y-0.5 pr-1">
+                    {loading ? (
+                        <div className="text-center py-8 text-text-muted text-xs animate-pulse">Loading modules...</div>
+                    ) : search ? (
+                        filtered.length > 0 ? (
+                            filtered.map((mod) => (
+                                <button
+                                    key={mod}
+                                    onClick={() => onSelectModule(mod)}
+                                    className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg transition-all text-xs cursor-pointer border-0 ${selectedModule === mod
                                         ? 'bg-cyber-green/15 text-cyber-green'
                                         : 'text-text-secondary hover:text-text-primary hover:bg-bg-card-hover bg-transparent'
-                                    }`}
-                            >
-                                <span>⚡</span>
-                                <span className="truncate">{mod}</span>
-                            </button>
-                        ))
+                                        }`}
+                                >
+                                    <span>⚡</span>
+                                    <span className="truncate">{mod}</span>
+                                </button>
+                            ))
+                        ) : (
+                            <div className="text-center py-4 text-text-muted text-xs">No modules found</div>
+                        )
                     ) : (
-                        <div className="text-center py-4 text-text-muted text-xs">No modules found</div>
-                    )
-                ) : (
-                    renderTree(tree)
-                )}
+                        renderTree(tree)
+                    )}
+                </div>
             </div>
         </div>
     );

@@ -2,342 +2,279 @@ import { useState, useEffect } from 'react';
 import apiClient from '../lib/apiClient';
 import toast from 'react-hot-toast';
 
-interface ACLTemplate {
+interface AclTemplate {
     id: number;
     name: string;
-    permissions: PermissionsObj;
+    permissions: any; // Backend sends {panels: {mod: {view: bool}}}, component uses {mod: string[]}
     created_at: string;
 }
 
-interface PanelPerms {
-    [action: string]: boolean;
+/** Convert backend format {panels:{modules:{view:true,run:true}}} → {modules:["view","run"]} */
+function fromBackendPerms(perms: any): Record<string, string[]> {
+    if (!perms) return {};
+    const panels = perms.panels || perms;
+    const result: Record<string, string[]> = {};
+    for (const [cat, actions] of Object.entries(panels)) {
+        if (Array.isArray(actions)) {
+            result[cat] = actions;
+        } else if (typeof actions === 'object' && actions !== null) {
+            result[cat] = Object.entries(actions as Record<string, boolean>)
+                .filter(([, v]) => v)
+                .map(([k]) => k);
+        }
+    }
+    return result;
 }
 
-interface PermissionsObj {
-    panels: {
-        [panel: string]: PanelPerms;
-    };
-}
-
-// All available permissions
-const ALL_PANELS: { panel: string; label: string; icon: string; actions: { key: string; label: string }[] }[] = [
-    { panel: 'modules', label: 'Modules', icon: '📦', actions: [{ key: 'view', label: 'View' }, { key: 'run', label: 'Run' }] },
-    { panel: 'jobs', label: 'Jobs', icon: '📋', actions: [{ key: 'view', label: 'View' }] },
-    { panel: 'target', label: 'Target', icon: '🎯', actions: [{ key: 'view', label: 'View' }, { key: 'set', label: 'Set / Clear' }] },
-    { panel: 'status', label: 'Status', icon: '📊', actions: [{ key: 'view', label: 'View' }] },
-    { panel: 'settings', label: 'Settings', icon: '⚙️', actions: [{ key: 'view', label: 'View' }] },
-    { panel: 'users', label: 'Users', icon: '👥', actions: [{ key: 'manage', label: 'Manage' }] },
-    { panel: 'acl', label: 'ACL', icon: '🔒', actions: [{ key: 'manage', label: 'Manage' }] },
-];
-
-function buildDefaultPerms(): PermissionsObj {
-    const panels: { [k: string]: PanelPerms } = {};
-    ALL_PANELS.forEach(({ panel, actions }) => {
-        panels[panel] = {};
-        actions.forEach(a => { panels[panel][a.key] = true; });
-    });
+/** Convert component format {modules:["view","run"]} → {panels:{modules:{view:true,run:true}}} */
+function toBackendPerms(perms: Record<string, string[]>): any {
+    const panels: Record<string, Record<string, boolean>> = {};
+    for (const [cat, meta] of Object.entries(PERMISSION_CATEGORIES)) {
+        panels[cat] = {};
+        for (const action of meta.actions) {
+            panels[cat][action] = perms[cat]?.includes(action) || false;
+        }
+    }
     return { panels };
 }
 
-function PermissionTreeEditor({ permissions, onChange }: { permissions: PermissionsObj; onChange: (p: PermissionsObj) => void }) {
-    const toggle = (panel: string, action: string) => {
-        const updated = JSON.parse(JSON.stringify(permissions)) as PermissionsObj;
-        if (!updated.panels[panel]) updated.panels[panel] = {};
-        updated.panels[panel][action] = !updated.panels[panel][action];
-        onChange(updated);
-    };
-
-    const togglePanel = (panel: string, actions: { key: string }[]) => {
-        const allEnabled = actions.every(a => permissions.panels[panel]?.[a.key]);
-        const updated = JSON.parse(JSON.stringify(permissions)) as PermissionsObj;
-        if (!updated.panels[panel]) updated.panels[panel] = {};
-        actions.forEach(a => { updated.panels[panel][a.key] = !allEnabled; });
-        onChange(updated);
-    };
-
-    return (
-        <div className="space-y-2">
-            {ALL_PANELS.map(({ panel, label, icon, actions }) => {
-                const allEnabled = actions.every(a => permissions.panels[panel]?.[a.key]);
-                return (
-                    <div key={panel} className="bg-bg-input rounded-lg border border-border-dim p-3">
-                        <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm">{icon}</span>
-                                <span className="text-xs font-bold text-text-primary uppercase tracking-wider">{label}</span>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => togglePanel(panel, actions)}
-                                className={`text-[0.6rem] px-2 py-0.5 rounded border cursor-pointer transition-all ${allEnabled
-                                    ? 'border-cyber-green/30 text-cyber-green bg-cyber-green/5 hover:bg-cyber-green/10'
-                                    : 'border-border-dim text-text-muted hover:text-text-secondary'
-                                    }`}
-                            >
-                                {allEnabled ? 'All On' : 'Enable All'}
-                            </button>
-                        </div>
-                        <div className="flex flex-wrap gap-4">
-                            {actions.map(a => (
-                                <label key={a.key} className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-                                    <div className="toggle-switch">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!permissions.panels[panel]?.[a.key]}
-                                            onChange={() => toggle(panel, a.key)}
-                                        />
-                                        <span className="toggle-slider" />
-                                    </div>
-                                    {a.label}
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
+const PERMISSION_CATEGORIES = {
+    modules: { label: 'Modules', icon: '📦', actions: ['view', 'execute'] },
+    jobs: { label: 'Jobs', icon: '⚡', actions: ['view', 'kill'] },
+    target: { label: 'Target', icon: '🎯', actions: ['view', 'set'] },
+    status: { label: 'Status', icon: '📊', actions: ['view'] },
+    users: { label: 'Users', icon: '👥', actions: ['manage'] },
+    acl: { label: 'ACL', icon: '🔒', actions: ['manage'] },
+};
 
 export default function ACLManager() {
-    const [templates, setTemplates] = useState<ACLTemplate[]>([]);
+    const [templates, setTemplates] = useState<AclTemplate[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [editTemplate, setEditTemplate] = useState<ACLTemplate | null>(null);
-    const [newTemplateName, setNewTemplateName] = useState('');
-    const [newPermissions, setNewPermissions] = useState<PermissionsObj>(buildDefaultPerms());
+    const [showModal, setShowModal] = useState(false);
+    const [editTemplate, setEditTemplate] = useState<AclTemplate | null>(null);
+
+    // Form state
+    const [name, setName] = useState('');
+    const [permissions, setPermissions] = useState<Record<string, string[]>>({});
 
     const fetchTemplates = async () => {
         try {
             const res = await apiClient.get('/acl/templates');
-            if (res.data.success) {
-                setTemplates(res.data.templates);
-            }
-        } catch (err: any) {
+            if (res.data.success) setTemplates(res.data.templates || res.data.data || []);
+        } catch {
             toast.error('Failed to load ACL templates');
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchTemplates();
-    }, []);
+    useEffect(() => { fetchTemplates(); }, []);
 
-    const handleCreate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        try {
-            const res = await apiClient.post('/acl/templates', {
-                name: newTemplateName,
-                permissions: newPermissions
-            });
-            if (res.data.success) {
-                toast.success('Template created');
-                setShowCreateModal(false);
-                setNewTemplateName('');
-                setNewPermissions(buildDefaultPerms());
-                fetchTemplates();
+    const openCreate = () => {
+        setEditTemplate(null);
+        setName('');
+        setPermissions({});
+        setShowModal(true);
+    };
+
+    const openEdit = (template: AclTemplate) => {
+        setEditTemplate(template);
+        setName(template.name);
+        setPermissions(fromBackendPerms(template.permissions));
+        setShowModal(true);
+    };
+
+    const togglePermission = (category: string, action: string) => {
+        setPermissions(prev => {
+            const next = { ...prev };
+            if (!next[category]) next[category] = [];
+            if (next[category].includes(action)) {
+                next[category] = next[category].filter(a => a !== action);
+                if (next[category].length === 0) delete next[category];
+            } else {
+                next[category] = [...next[category], action];
             }
+            return next;
+        });
+    };
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const backendPerms = toBackendPerms(permissions);
+        try {
+            if (editTemplate) {
+                const res = await apiClient.put(`/acl/templates/${editTemplate.id}`, { name, permissions: backendPerms });
+                if (res.data.success) toast.success('Template updated');
+                else toast.error(res.data.message || 'Update failed');
+            } else {
+                const res = await apiClient.post('/acl/templates', { name, permissions: backendPerms });
+                if (res.data.success) toast.success('Template created');
+                else toast.error(res.data.message || 'Creation failed');
+            }
+            setShowModal(false);
+            fetchTemplates();
         } catch (err: any) {
-            toast.error(err.response?.data?.message || 'Failed to create template');
+            toast.error(err.response?.data?.message || 'Save failed');
         }
     };
 
-    const handleEdit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!editTemplate) return;
+    const handleDelete = async (template: AclTemplate) => {
+        if (!confirm(`Delete ACL template "${template.name}"? This cannot be undone.`)) return;
         try {
-            const res = await apiClient.put(`/acl/templates/${editTemplate.id}`, {
-                name: editTemplate.name,
-                permissions: editTemplate.permissions,
-            });
-            if (res.data.success) {
-                toast.success('Template updated');
-                setShowEditModal(false);
-                setEditTemplate(null);
-                fetchTemplates();
-            }
-        } catch (err: any) {
-            toast.error(err.response?.data?.message || 'Failed to update template');
-        }
-    };
-
-    const handleDelete = async (id: number) => {
-        if (!confirm('Delete this template? Users assigned to it will lose specific permissions.')) return;
-        try {
-            const res = await apiClient.delete(`/acl/templates/${id}`);
+            const res = await apiClient.delete(`/acl/templates/${template.id}`);
             if (res.data.success) {
                 toast.success('Template deleted');
                 fetchTemplates();
+            } else {
+                toast.error(res.data.message || 'Delete failed');
             }
         } catch (err: any) {
-            toast.error(err.response?.data?.message || 'Failed to delete template');
+            toast.error(err.response?.data?.message || 'Delete failed');
         }
     };
 
-    const openEditModal = (t: ACLTemplate) => {
-        setEditTemplate(JSON.parse(JSON.stringify(t)));
-        setShowEditModal(true);
+    const countPerms = (perms: any): number => {
+        try {
+            const flat = fromBackendPerms(perms);
+            return Object.values(flat).reduce((sum, arr) => sum + arr.length, 0);
+        } catch { return 0; }
     };
 
     return (
-        <div className="glass-card overflow-hidden">
-            <div className="p-4 border-b border-border-dim flex justify-between items-center">
-                <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
-                    <span className="text-cyber-purple">🔒</span> ACL Templates
-                </h2>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="btn-glow px-3 py-1.5 text-xs"
-                >
-                    + New Template
-                </button>
-            </div>
+        <>
+            <div className="glass-card overflow-hidden">
+                {/* Gradient header */}
+                <div className="card-header card-header-yellow">
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                            <span className="text-cyber-yellow">🔒</span> ACL Templates
+                        </h2>
+                        <span className="badge badge-yellow text-[0.6rem]">{templates.length}</span>
+                    </div>
+                    <button onClick={openCreate} className="btn-glow text-xs !py-1.5 !px-4">
+                        + Create Template
+                    </button>
+                </div>
 
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                    <thead className="bg-bg-card border-b border-border-dim text-text-muted uppercase tracking-wider">
-                        <tr>
-                            <th className="p-3 font-medium">ID</th>
-                            <th className="p-3 font-medium">Name</th>
-                            <th className="p-3 font-medium">Permissions Summary</th>
-                            <th className="p-3 font-medium">Created</th>
-                            <th className="p-3 font-medium text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-dim">
-                        {loading ? (
-                            <tr><td colSpan={5} className="p-8 text-center text-text-muted">Loading templates...</td></tr>
-                        ) : templates.length === 0 ? (
-                            <tr><td colSpan={5} className="p-8 text-center text-text-muted">No templates found</td></tr>
-                        ) : (
-                            templates.map((t) => (
-                                <tr key={t.id} className="hover:bg-bg-card-hover transition-colors">
-                                    <td className="p-3 text-text-secondary font-mono">{t.id}</td>
-                                    <td className="p-3 text-text-primary font-medium">{t.name}</td>
-                                    <td className="p-3 text-text-secondary">
-                                        <div className="flex flex-wrap gap-1">
-                                            {Object.entries(t.permissions?.panels || {}).map(([panel, perms]) => {
-                                                const activeActions = Object.entries(perms as PanelPerms)
-                                                    .filter(([, v]) => v)
-                                                    .map(([k]) => k);
-                                                if (activeActions.length === 0) return null;
-                                                return (
-                                                    <span key={panel} className="badge badge-green text-[0.55rem]" title={`${panel}: ${activeActions.join(', ')}`}>
-                                                        {panel}
-                                                    </span>
-                                                );
-                                            })}
-                                        </div>
-                                    </td>
-                                    <td className="p-3 text-text-muted">{new Date(t.created_at).toLocaleDateString()}</td>
-                                    <td className="p-3 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={() => openEditModal(t)}
-                                                className="btn-outline !text-[0.6rem] !py-0.5 !px-2"
-                                            >
-                                                Edit
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(t.id)}
-                                                className="text-cyber-red hover:text-red-400 transition-colors bg-transparent border-0 cursor-pointer"
-                                            >
-                                                Delete
-                                            </button>
-                                        </div>
-                                    </td>
+                {loading ? (
+                    <div className="p-8 text-center text-text-muted text-xs animate-pulse">Loading templates...</div>
+                ) : templates.length === 0 ? (
+                    <div className="p-8 text-center">
+                        <div className="text-3xl mb-3 opacity-20">🔒</div>
+                        <p className="text-text-muted text-xs">No ACL templates. Create one to restrict user permissions.</p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="table-premium">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Permissions</th>
+                                    <th>Created</th>
+                                    <th className="text-right">Actions</th>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
+                            </thead>
+                            <tbody>
+                                {templates.map((template) => (
+                                    <tr key={template.id}>
+                                        <td className="text-text-primary font-semibold">{template.name}</td>
+                                        <td>
+                                            <div className="flex flex-wrap gap-1">
+                                                {Object.entries(fromBackendPerms(template.permissions)).flatMap(([cat, actions]) =>
+                                                    (actions as string[]).map(action => (
+                                                        <span key={`${cat}.${action}`} className="bg-bg-card px-1.5 py-0.5 rounded text-[0.55rem] text-text-muted border border-border-dim">
+                                                            {cat}.{action}
+                                                        </span>
+                                                    ))
+                                                )}
+                                                {countPerms(template.permissions) === 0 && (
+                                                    <span className="text-text-muted text-[0.6rem]">No permissions</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="text-text-muted text-[0.65rem]">
+                                            {new Date(template.created_at).toLocaleDateString()}
+                                        </td>
+                                        <td className="text-right">
+                                            <div className="flex items-center gap-1.5 justify-end">
+                                                <button onClick={() => openEdit(template)} className="btn-outline text-[0.6rem] !px-2 !py-0.5">
+                                                    ✏️ Edit
+                                                </button>
+                                                <button onClick={() => handleDelete(template)}
+                                                    className="px-2 py-0.5 text-[0.6rem] text-cyber-red border border-cyber-red/30 rounded bg-transparent cursor-pointer hover:bg-cyber-red/10 transition-colors font-semibold"
+                                                >
+                                                    🗑 Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
-            {/* Create Modal */}
-            {showCreateModal && (
-                <div className="modal-overlay">
-                    <div className="glass-card w-full max-w-lg p-6 max-h-[85vh] overflow-y-auto">
-                        <h3 className="text-lg font-bold text-text-primary mb-4">New ACL Template</h3>
-                        <form onSubmit={handleCreate} className="space-y-4">
+            {/* Modal */}
+            {showModal && (
+                <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}>
+                    <div className="glass-card w-full max-w-lg overflow-hidden">
+                        <div className={`card-header ${editTemplate ? 'card-header-blue' : 'card-header-green'}`}>
+                            <h3 className="text-sm font-bold text-text-primary">
+                                {editTemplate ? '✏️ Edit Template' : '➕ Create Template'}
+                            </h3>
+                            <button onClick={() => setShowModal(false)} className="text-text-muted hover:text-text-primary text-sm bg-transparent border-0 cursor-pointer">✕</button>
+                        </div>
+                        <form onSubmit={handleSave} className="p-5 space-y-5">
                             <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">Template Name *</label>
-                                <input
-                                    type="text"
-                                    value={newTemplateName}
-                                    onChange={(e) => setNewTemplateName(e.target.value)}
-                                    className="input-cyber"
-                                    placeholder="e.g. Senior Pentester"
-                                    required
-                                />
+                                <label className="block text-xs text-text-secondary mb-1.5 uppercase tracking-wider font-semibold">Template Name</label>
+                                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input-cyber" required placeholder="e.g. Read-Only Operator" />
                             </div>
 
                             <div>
-                                <label className="block text-xs text-text-secondary mb-2 uppercase tracking-wider">Permissions</label>
-                                <PermissionTreeEditor permissions={newPermissions} onChange={setNewPermissions} />
+                                <label className="block text-xs text-text-secondary mb-2 uppercase tracking-wider font-semibold">Permissions</label>
+                                <div className="space-y-3">
+                                    {Object.entries(PERMISSION_CATEGORIES).map(([cat, meta]) => (
+                                        <div key={cat} className="bg-bg-input rounded-lg p-3 border border-border-dim">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span>{meta.icon}</span>
+                                                <span className="text-xs font-semibold text-text-primary">{meta.label}</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {meta.actions.map(action => {
+                                                    const isActive = permissions[cat]?.includes(action) || false;
+                                                    return (
+                                                        <button
+                                                            key={action}
+                                                            type="button"
+                                                            onClick={() => togglePermission(cat, action)}
+                                                            className={`px-3 py-1.5 rounded text-[0.65rem] font-semibold transition-all cursor-pointer border ${isActive
+                                                                ? 'bg-cyber-green/15 text-cyber-green border-cyber-green/30'
+                                                                : 'bg-bg-card text-text-muted border-border-dim hover:text-text-secondary'
+                                                                }`}
+                                                        >
+                                                            {isActive ? '✓ ' : ''}{action}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
 
-                            <div className="flex gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCreateModal(false)}
-                                    className="flex-1 py-2 rounded-lg border border-border-dim text-text-secondary hover:bg-bg-card-hover transition-colors cursor-pointer"
-                                >
-                                    Cancel
+                            <div className="flex gap-3 pt-2">
+                                <button type="submit" className="btn-glow flex-1">
+                                    {editTemplate ? 'Save Changes' : 'Create Template'}
                                 </button>
-                                <button type="submit" className="flex-1 btn-glow py-2">
-                                    Create Template
+                                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
+                                    Cancel
                                 </button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
-
-            {/* Edit Modal */}
-            {showEditModal && editTemplate && (
-                <div className="modal-overlay">
-                    <div className="glass-card w-full max-w-lg p-6 max-h-[85vh] overflow-y-auto">
-                        <h3 className="text-lg font-bold text-text-primary mb-4">
-                            Edit Template: <span className="text-cyber-green">{editTemplate.name}</span>
-                        </h3>
-                        <form onSubmit={handleEdit} className="space-y-4">
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-1 uppercase tracking-wider">Template Name</label>
-                                <input
-                                    type="text"
-                                    value={editTemplate.name}
-                                    onChange={(e) => setEditTemplate({ ...editTemplate, name: e.target.value })}
-                                    className="input-cyber"
-                                    required
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs text-text-secondary mb-2 uppercase tracking-wider">Permissions</label>
-                                <PermissionTreeEditor
-                                    permissions={editTemplate.permissions}
-                                    onChange={(p) => setEditTemplate({ ...editTemplate, permissions: p })}
-                                />
-                            </div>
-
-                            <div className="flex gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => { setShowEditModal(false); setEditTemplate(null); }}
-                                    className="flex-1 py-2 rounded-lg border border-border-dim text-text-secondary hover:bg-bg-card-hover transition-colors cursor-pointer"
-                                >
-                                    Cancel
-                                </button>
-                                <button type="submit" className="flex-1 btn-glow py-2">
-                                    Save Changes
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-        </div>
+        </>
     );
 }

@@ -57,26 +57,45 @@ export default function OutputConsole({ jobId }: Props) {
 
     if (!jobId) {
         return (
-            <div className="glass-card h-full min-h-[400px] flex flex-col">
-                <div className="flex items-center justify-between p-4 border-b border-border-dim">
-                    <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
-                        <span className="text-cyber-green">📺</span> Output Console
-                    </h2>
-                    <span className="badge badge-blue">IDLE</span>
+            <div className="glass-card overflow-hidden h-full min-h-[300px] flex flex-col">
+                {/* Header with terminal dots */}
+                <div className="card-header card-header-green">
+                    <div className="flex items-center gap-3">
+                        <div className="terminal-dots">
+                            <span className="dot-red" />
+                            <span className="dot-yellow" />
+                            <span className="dot-green" />
+                        </div>
+                        <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                            📺 Output Console
+                        </h2>
+                    </div>
+                    <span className="badge badge-blue text-[0.6rem]">IDLE</span>
                 </div>
                 <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
-                    Waiting for job execution...
+                    <div className="text-center">
+                        <div className="text-3xl opacity-20 mb-3">📺</div>
+                        Waiting for job execution...
+                    </div>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="glass-card h-full min-h-[400px] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-border-dim">
-                <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
-                    <span className="text-cyber-green">📺</span> Output Console
-                </h2>
+        <div className="glass-card overflow-hidden h-full min-h-[400px] flex flex-col">
+            {/* Header with terminal dots */}
+            <div className="card-header card-header-green">
+                <div className="flex items-center gap-3">
+                    <div className="terminal-dots">
+                        <span className="dot-red" />
+                        <span className="dot-yellow" />
+                        <span className="dot-green" />
+                    </div>
+                    <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                        📺 Output Console
+                    </h2>
+                </div>
                 <div className="flex items-center gap-3">
                     <span className="text-xs text-text-muted font-mono">{jobId.slice(0, 8)}</span>
                     <span
@@ -87,7 +106,7 @@ export default function OutputConsole({ jobId }: Props) {
                                 : status === 'Failed'
                                     ? 'badge-red'
                                     : 'badge-yellow'
-                            }`}
+                            } text-[0.6rem]`}
                     >
                         {status}
                     </span>
